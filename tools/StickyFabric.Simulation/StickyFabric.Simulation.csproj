@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless run of the sticky-fabric solver: a sphere sticks to the fabric, pulls it
+    and lets go. Used by CI as a smoke test and to generate the README figures.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Sticky-Fabric/Assets/StickyFabric/Runtime/Core/**/*.cs" Link="Core/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../Sticky-Fabric/Assets/StickyFabric/Tests/EditMode/Core/SphereContactQuery.cs" Link="Shared/SphereContactQuery.cs" />
+  </ItemGroup>
+
+</Project>

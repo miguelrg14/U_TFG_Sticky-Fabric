@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.targetPlatform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        targetPlatform: [StandaloneWindows64, StandaloneLinux64, WebGL]
+    steps:
+      - name: Require a Unity license
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          if [ -z "$UNITY_LICENSE" ]; then
+            echo "::error title=Missing secret::Releases need the UNITY_LICENSE, UNITY_EMAIL and UNITY_PASSWORD secrets (see README)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: Sticky-Fabric/Library
+          key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-
+
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Sticky-Fabric
+          targetPlatform: ${{ matrix.targetPlatform }}
+          buildName: StickyFabric
+          versioning: Tag
+
+      - name: Package
+        run: |
+          cd build/${{ matrix.targetPlatform }}
+          sudo chown -R "$(id -u):$(id -g)" .
+          zip -qr "../../StickyFabric-${{ github.ref_name }}-${{ matrix.targetPlatform }}.zip" StickyFabric
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.targetPlatform }}
+          path: StickyFabric-*.zip
+
+  publish:
+    name: Publish GitHub release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

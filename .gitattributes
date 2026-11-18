@@ -1,0 +1,16 @@
+# Normalise line endings in the repository; Git converts them on checkout.
+* text=auto
+
+# Unity YAML assets: let Unity's Smart Merge handle conflicts if configured.
+*.unity text merge=unityyamlmerge
+*.prefab text merge=unityyamlmerge
+*.asset text merge=unityyamlmerge
+*.mat text merge=unityyamlmerge
+*.meta text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.fbx binary

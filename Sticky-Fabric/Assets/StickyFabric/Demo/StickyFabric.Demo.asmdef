@@ -1,0 +1,17 @@
+{
+    "name": "StickyFabric.Demo",
+    "rootNamespace": "StickyFabric.Demo",
+    "references": [
+        "StickyFabric.Core",
+        "StickyFabric.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

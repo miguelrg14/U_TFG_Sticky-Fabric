@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace StickyFabric.Demo
 {
@@ -18,18 +19,25 @@ namespace StickyFabric.Demo
         private bool showPanel = true;
         private GUIStyle labelStyle;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void SpawnInDemoScene()
+        // RuntimeInitializeOnLoadMethod only runs once, when Play starts. Listening to sceneLoaded
+        // also covers the demo scene being loaded later (from another scene or from a test).
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
         {
-            if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != DemoSceneName)
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (scene.name != DemoSceneName || FindAnyObjectByType<DemoHud>() != null)
             {
                 return;
             }
 
-            if (FindAnyObjectByType<DemoHud>() == null)
-            {
-                new GameObject(nameof(DemoHud)).AddComponent<DemoHud>();
-            }
+            var hud = new GameObject(nameof(DemoHud));
+            SceneManager.MoveGameObjectToScene(hud, scene);
+            hud.AddComponent<DemoHud>();
         }
 
         private void Start()

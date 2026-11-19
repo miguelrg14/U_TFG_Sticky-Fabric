@@ -9,6 +9,10 @@ A procedural mesh that behaves like chewing gum: its vertices stick to whatever 
 
 This is my Bachelor's thesis (*Trabajo de Fin de Grado*) for the Video Game Design and Development degree at UDIT, 2024–2025: **"Dynamic stretch fabrics with adhesion properties"**.
 
+![A sphere pushes through the fabric: the vertices stick to it, stretch and snap back](docs/images/sticky-fabric.gif)
+
+*From the thesis presentation: each magenta point is a vertex of the fabric. They stick to the sphere as it passes through, stretch with it and return to their place once they reach the elastic limit.*
+
 ![Sticky fabric deforming around a moving capsule in Unity](docs/images/unity-deformation.jpg)
 
 > **Play it in the browser:** https://miguelrg14.github.io/U_TFG_Sticky-Fabric-Unity/ *(published by CI once the Unity license secrets are configured, see [CI](#continuous-integration))*

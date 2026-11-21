@@ -127,6 +127,7 @@ jobs:
           projectPath: Sticky-Fabric
           targetPlatform: WebGL
           buildName: StickyFabric
+          customParameters: -job-worker-count 2
 
       - uses: actions/upload-pages-artifact@v3
         with:

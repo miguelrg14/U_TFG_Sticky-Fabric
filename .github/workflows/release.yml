@@ -75,7 +75,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" build
           src="build/${{ matrix.targetPlatform }}"
           [ -d "$src/StickyFabric" ] && src="$src/StickyFabric"
-          rm -rf "$src"/*_DoNotShip
+          rm -rf "$src"/*_DoNotShip "$src"/*_ButDontShipItWithYourGame
 
           name="StickyFabric-${VERSION}-${{ matrix.label }}"
           mkdir -p "dist/$name"

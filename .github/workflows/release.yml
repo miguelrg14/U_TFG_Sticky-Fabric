@@ -1,20 +1,31 @@
 name: Release
 
+# Pushing a v* tag builds the Windows, Linux and WebGL players and publishes them in a GitHub release.
+# Running it manually (Actions > Release > Run workflow) only builds them and keeps the zips as run artifacts.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build ${{ matrix.targetPlatform }}
+    name: Build ${{ matrix.label }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        targetPlatform: [StandaloneWindows64, StandaloneLinux64, WebGL]
+        include:
+          - targetPlatform: StandaloneWindows64
+            label: Windows
+          - targetPlatform: StandaloneLinux64
+            label: Linux
+          - targetPlatform: WebGL
+            label: WebGL
+    env:
+      VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('dev-{0}', github.sha) }}
     steps:
       - name: Require a Unity license
         env:
@@ -34,7 +45,10 @@ jobs:
           haskell: true
           large-packages: false
 
+      # Full history so GameCI can read the version from the tag.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/cache@v4
         with:
@@ -51,22 +65,36 @@ jobs:
           projectPath: Sticky-Fabric
           targetPlatform: ${{ matrix.targetPlatform }}
           buildName: StickyFabric
-          versioning: Tag
+          versioning: ${{ startsWith(github.ref, 'refs/tags/') && 'Tag' || 'None' }}
+          customParameters: -job-worker-count 2
 
+      # Windows/Linux builds are loose files (StickyFabric.exe, StickyFabric_Data, ...) in build/<platform>/;
+      # WebGL builds are a StickyFabric/ folder. Both end up in one folder inside the zip.
       - name: Package
         run: |
-          cd build/${{ matrix.targetPlatform }}
-          sudo chown -R "$(id -u):$(id -g)" .
-          zip -qr "../../StickyFabric-${{ github.ref_name }}-${{ matrix.targetPlatform }}.zip" StickyFabric
+          sudo chown -R "$(id -u):$(id -g)" build
+          src="build/${{ matrix.targetPlatform }}"
+          [ -d "$src/StickyFabric" ] && src="$src/StickyFabric"
+          rm -rf "$src"/*_DoNotShip
+
+          name="StickyFabric-${VERSION}-${{ matrix.label }}"
+          mkdir -p "dist/$name"
+          cp -a "$src"/. "dist/$name/"
+          (cd dist && zip -qr "$name.zip" "$name")
+
+          ls -la "dist/$name"
+          test -n "$(ls -A "dist/$name")"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.targetPlatform }}
-          path: StickyFabric-*.zip
+          name: StickyFabric-${{ matrix.label }}
+          path: dist/*.zip
+          if-no-files-found: error
 
   publish:
     name: Publish GitHub release
     needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

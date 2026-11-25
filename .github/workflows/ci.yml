@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, "feature/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -11,7 +12,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancelling a running Unity build sends SIGKILL to the container -> exit code 137.
+  # Keep cancellation for branches/PRs, but never for a release tag.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   core:
@@ -70,13 +73,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Add swap space (avoids OOM kills / exit code 137)
+        run: |
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+          fi
+          sudo swapon /swapfile || true
+          free -h
+
       - uses: actions/cache@v4
         with:
+          # Keep test imports separate from player builds (different build targets).
           path: Sticky-Fabric/Library
-          key: Library-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
-          restore-keys: Library-
+          key: Library-Tests-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-Tests-
 
-      - uses: game-ci/unity-test-runner@v4
+      # Unity 6.6+ needs >= 4.3.2: older versions fail with the Docker /dev/shm default of 64 MB.
+      - uses: game-ci/unity-test-runner@v4.3.2
         id: tests
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -98,7 +113,10 @@ jobs:
   webgl:
     name: WebGL build
     needs: [unity-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       # The Unity Docker image plus a player build need more disk than the runner has free.
@@ -110,15 +128,29 @@ jobs:
           haskell: true
           large-packages: false
 
+      - name: Add swap space (avoids OOM kills / exit code 137)
+        run: |
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+          fi
+          sudo swapon /swapfile || true
+          free -h
+
       - uses: actions/checkout@v4
+
+      - name: Monitor RAM during the build
+        run: (while true; do date; free -h; sleep 10; done) > memory.log 2>&1 &
 
       - uses: actions/cache@v4
         with:
           path: Sticky-Fabric/Library
           key: Library-WebGL-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
-          restore-keys: Library-
+          restore-keys: Library-WebGL-
 
-      - uses: game-ci/unity-builder@v4
+      # v6 is a drop-in upgrade from v4/v5 and fixes Unity 6.6+ shared memory.
+      - uses: game-ci/unity-builder@v6.0.0
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -128,14 +160,96 @@ jobs:
           targetPlatform: WebGL
           buildName: StickyFabric
           customParameters: -job-worker-count 2
+          dockerShmSize: 2g
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/WebGL/StickyFabric
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-webgl
+          path: build/WebGL/StickyFabric
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-webgl
+          path: memory.log
+
+  standalone:
+    name: Build ${{ matrix.target }}
+    needs: [unity-tests]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: StandaloneWindows64
+            artifact: windows
+          - target: StandaloneLinux64
+            artifact: linux
+    steps:
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+
+      - name: Add swap space (avoids OOM kills / exit code 137)
+        run: |
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+          fi
+          sudo swapon /swapfile || true
+          free -h
+
+      - uses: actions/checkout@v4
+
+      - name: Monitor RAM during the build
+        run: (while true; do date; free -h; sleep 10; done) > memory.log 2>&1 &
+
+      - uses: actions/cache@v4
+        with:
+          path: Sticky-Fabric/Library
+          key: Library-${{ matrix.target }}-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-${{ matrix.target }}-
+
+      - uses: game-ci/unity-builder@v6.0.0
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Sticky-Fabric
+          targetPlatform: ${{ matrix.target }}
+          buildName: StickyFabric
+          customParameters: -job-worker-count 2
+          dockerShmSize: 2g
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.artifact }}
+          path: build/${{ matrix.target }}/StickyFabric
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-${{ matrix.target }}
+          path: memory.log
+
   deploy-pages:
     name: Deploy demo to GitHub Pages
     needs: [webgl]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -146,3 +260,31 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    name: Publish GitHub Release
+    needs: [webgl, standalone]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: dist
+
+      - name: Package builds
+        run: |
+          cd "$GITHUB_WORKSPACE/dist"
+          (cd build-webgl   && zip -qr ../sticky-fabric-webgl.zip .)
+          (cd build-windows && zip -qr ../sticky-fabric-windows.zip .)
+          (cd build-linux   && tar -czf ../sticky-fabric-linux.tar.gz .)
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/sticky-fabric-webgl.zip
+            dist/sticky-fabric-windows.zip
+            dist/sticky-fabric-linux.tar.gz

@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Monitor RAM during the build
-        run: (while true; do date; free -h; sleep 10; done) > memory.log 2>&1 &
+        run: (while true; do date; free -h; sleep 10; done) > "$RUNNER_TEMP/memory.log" 2>&1 &
 
       - uses: actions/cache@v4
         with:
@@ -155,12 +155,15 @@ jobs:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # v6 has no dockerShmSize input; the CLI reads this env var (default 1025m).
+          GAME_CI_DOCKER_SHM_SIZE: 2g
         with:
           projectPath: Sticky-Fabric
           targetPlatform: WebGL
           buildName: StickyFabric
+          cliVersion: v0.1.77
           customParameters: -job-worker-count 2
-          dockerShmSize: 2g
+          allowDirtyBuild: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -175,7 +178,7 @@ jobs:
         if: always()
         with:
           name: memory-webgl
-          path: memory.log
+          path: ${{ runner.temp }}/memory.log
 
   standalone:
     name: Build ${{ matrix.target }}
@@ -215,7 +218,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Monitor RAM during the build
-        run: (while true; do date; free -h; sleep 10; done) > memory.log 2>&1 &
+        run: (while true; do date; free -h; sleep 10; done) > "$RUNNER_TEMP/memory.log" 2>&1 &
 
       - uses: actions/cache@v4
         with:
@@ -228,23 +231,27 @@ jobs:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # v6 has no dockerShmSize input; the CLI reads this env var (default 1025m).
+          GAME_CI_DOCKER_SHM_SIZE: 2g
         with:
           projectPath: Sticky-Fabric
           targetPlatform: ${{ matrix.target }}
           buildName: StickyFabric
+          cliVersion: v0.1.77
           customParameters: -job-worker-count 2
-          dockerShmSize: 2g
+          allowDirtyBuild: true
 
       - uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.artifact }}
-          path: build/${{ matrix.target }}/StickyFabric
+          path: build/${{ matrix.target }}/
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: memory-${{ matrix.target }}
-          path: memory.log
+          path: ${{ runner.temp }}/memory.log
 
   deploy-pages:
     name: Deploy demo to GitHub Pages

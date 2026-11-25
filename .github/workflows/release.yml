@@ -13,17 +13,21 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.label }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - targetPlatform: StandaloneWindows64
             label: Windows
+            runner: ubuntu-latest
           - targetPlatform: StandaloneLinux64
             label: Linux
+            runner: ubuntu-latest
+          # If WebGL still dies with exit 137, switch this one to ubuntu-latest-8-cores (32 GB).
           - targetPlatform: WebGL
             label: WebGL
+            runner: ubuntu-latest
     env:
       VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('dev-{0}', github.sha) }}
     steps:
@@ -50,23 +54,42 @@ jobs:
         with:
           fetch-depth: 0
 
+      # WebGL + IL2CPP + Emscripten is the memory peak; 16 GB of swap avoids SIGKILL (exit 137).
+      - name: Add swap space
+        run: |
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 16G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=16384
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+          fi
+          sudo swapon /swapfile || true
+          free -h
+
+      - name: Monitor RAM during the build
+        run: (while true; do date; free -h; sleep 10; done) > "$RUNNER_TEMP/memory.log" 2>&1 &
+
       - uses: actions/cache@v4
         with:
           path: Sticky-Fabric/Library
           key: Library-${{ matrix.targetPlatform }}-${{ hashFiles('Sticky-Fabric/Packages/packages-lock.json', 'Sticky-Fabric/ProjectSettings/ProjectVersion.txt') }}
-          restore-keys: Library-
+          restore-keys: Library-${{ matrix.targetPlatform }}-
 
-      - uses: game-ci/unity-builder@v4
+      - uses: game-ci/unity-builder@v6.0.0
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # v6 has no dockerShmSize input; the CLI reads this env var (default 1025m).
+          GAME_CI_DOCKER_SHM_SIZE: 2g
         with:
           projectPath: Sticky-Fabric
           targetPlatform: ${{ matrix.targetPlatform }}
           buildName: StickyFabric
+          cliVersion: v0.1.77
           versioning: ${{ startsWith(github.ref, 'refs/tags/') && 'Tag' || 'None' }}
-          customParameters: -job-worker-count 2
+          # WebGL needs the lowest worker count to keep the IL2CPP peak under control.
+          customParameters: ${{ matrix.targetPlatform == 'WebGL' && '-job-worker-count 1' || '-job-worker-count 2' }}
+          allowDirtyBuild: true
 
       # Windows/Linux builds are loose files (StickyFabric.exe, StickyFabric_Data, ...) in build/<platform>/;
       # WebGL builds are a StickyFabric/ folder. Both end up in one folder inside the zip.
@@ -90,6 +113,12 @@ jobs:
           name: StickyFabric-${{ matrix.label }}
           path: dist/*.zip
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-${{ matrix.label }}
+          path: ${{ runner.temp }}/memory.log
 
   publish:
     name: Publish GitHub release
